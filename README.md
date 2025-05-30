@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import datetime
@@ -14,184 +15,198 @@ class AbsenceMonitoringSystem:
         self.fonts = fonts
         self.conn = parent_app.conn
 
+        # تهيئة البيانات
+        self.all_alerts_data = []
+
         self.setup_window()
         self.create_widgets()
-        self.load_courses()
+        self.load_all_alerts_data()
 
     def setup_window(self):
-        """إعداد نافذة نظام مراقبة الغياب"""
+        """إعداد نافذة نظام مراقبة الإنذارات"""
         self.window = tk.Toplevel(self.root)
-        self.window.title("نظام مراقبة الغياب والإنذارات")
-        self.window.geometry("1200x700")
+        self.window.title("جميع الإنذارات والتجاوزات في كل الدورات")
+        self.window.geometry("1400x800")
         self.window.configure(bg=self.colors["light"])
         self.window.grab_set()
 
         # توسيط النافذة
-        x = (self.window.winfo_screenwidth() - 1200) // 2
-        y = (self.window.winfo_screenheight() - 700) // 2
-        self.window.geometry(f"1200x700+{x}+{y}")
+        x = (self.window.winfo_screenwidth() - 1400) // 2
+        y = (self.window.winfo_screenheight() - 800) // 2
+        self.window.geometry(f"1400x800+{x}+{y}")
 
     def create_widgets(self):
         """إنشاء عناصر الواجهة"""
         # العنوان الرئيسي
-        title_frame = tk.Frame(self.window, bg=self.colors["primary"], height=60)
+        title_frame = tk.Frame(self.window, bg="#FF6B6B", height=60)
         title_frame.pack(fill=tk.X)
         title_frame.pack_propagate(False)
 
         tk.Label(
             title_frame,
-            text="نظام مراقبة الغياب والإنذارات - حسب تعليمات التدريب المستديمة",
+            text="🔔 جميع الإنذارات والتجاوزات في كل الدورات - حسب تعليمات التدريب المستديمة",
             font=self.fonts["large_title"],
-            bg=self.colors["primary"],
+            bg="#FF6B6B",
             fg="white"
         ).pack(expand=True)
 
-        # إطار اختيار الدورة
-        course_frame = tk.Frame(self.window, bg=self.colors["light"], pady=10)
-        course_frame.pack(fill=tk.X, padx=10)
+        # إطار الملخص
+        summary_frame = tk.Frame(self.window, bg=self.colors["light"], pady=10)
+        summary_frame.pack(fill=tk.X, padx=10)
+
+        self.summary_label = tk.Label(
+            summary_frame,
+            text="جاري تحليل البيانات...",
+            font=self.fonts["text_bold"],
+            bg=self.colors["light"]
+        )
+        self.summary_label.pack()
+
+        # إطار البحث والفلترة
+        filter_frame = tk.Frame(self.window, bg=self.colors["light"], pady=5)
+        filter_frame.pack(fill=tk.X, padx=10)
 
         tk.Label(
-            course_frame,
-            text="اختر الدورة:",
-            font=self.fonts["text_bold"],
+            filter_frame,
+            text="البحث:",
+            font=self.fonts["text"],
             bg=self.colors["light"]
         ).pack(side=tk.RIGHT, padx=5)
 
-        self.course_var = tk.StringVar()
-        self.course_combo = ttk.Combobox(
-            course_frame,
-            textvariable=self.course_var,
+        self.search_var = tk.StringVar()
+        search_entry = tk.Entry(
+            filter_frame,
+            textvariable=self.search_var,
             font=self.fonts["text"],
-            width=30,
-            state="readonly"
+            width=30
         )
-        self.course_combo.pack(side=tk.RIGHT, padx=5)
-        self.course_combo.bind("<<ComboboxSelected>>", self.on_course_selected)
+        search_entry.pack(side=tk.RIGHT, padx=5)
+        search_entry.bind("<KeyRelease>", lambda e: self.filter_alerts_tree())
 
-        # إطار معلومات الدورة - نص بسيط في المنتصف
-        self.info_frame = tk.LabelFrame(
-            self.window,
-            text="معلومات الدورة وحدود الغياب المسموح",
-            font=self.fonts["subtitle"],
-            bg=self.colors["light"],
-            fg=self.colors["dark"],
-            padx=20,
-            pady=20
-        )
-        self.info_frame.pack(fill=tk.X, padx=10, pady=10)
+        # خيارات الفلترة
+        tk.Label(
+            filter_frame,
+            text="عرض:",
+            font=self.fonts["text"],
+            bg=self.colors["light"]
+        ).pack(side=tk.RIGHT, padx=20)
 
-        # إطار النص المركزي
-        self.info_text_frame = tk.Frame(self.info_frame, bg=self.colors["light"])
-        self.info_text_frame.pack(expand=True)
+        self.filter_var = tk.StringVar(value="all")
+        filters = [
+            ("الكل", "all"),
+            ("المتجاوزين فقط", "exceeded"),
+            ("التحذيرات فقط", "warning"),
+            ("انتباه فقط", "danger")
+        ]
 
-        # متغير النص لعرض المعلومات
-        self.info_text_var = tk.StringVar()
-        self.info_text_var.set("الرجاء اختيار دورة من القائمة")
+        for text, value in filters:
+            tk.Radiobutton(
+                filter_frame,
+                text=text,
+                variable=self.filter_var,
+                value=value,
+                font=self.fonts["text"],
+                bg=self.colors["light"],
+                command=self.filter_alerts_tree
+            ).pack(side=tk.RIGHT, padx=5)
 
-        self.info_label = tk.Label(
-            self.info_text_frame,
-            textvariable=self.info_text_var,
-            font=("Tajawal", 14),
-            bg=self.colors["light"],
-            fg=self.colors["dark"],
-            justify=tk.CENTER
-        )
-        self.info_label.pack(pady=10)
+        # إطار القائمة
+        list_frame = tk.Frame(self.window, bg=self.colors["light"], padx=10, pady=5)
+        list_frame.pack(fill=tk.BOTH, expand=True)
 
-        # إطار قائمة المتدربين
-        students_frame = tk.LabelFrame(
-            self.window,
-            text="قائمة المتدربين وحالة الغياب",
-            font=self.fonts["subtitle"],
-            bg=self.colors["light"],
-            fg=self.colors["dark"],
-            padx=10,
-            pady=10
-        )
-        students_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # Treeview للإنذارات
+        columns = (
+        "course", "student_name", "rank", "without", "with", "total", "status", "percentage", "course_duration")
 
-        # إنشاء Treeview
-        columns = ("name", "rank", "without_excuse", "with_excuse", "total", "status", "percentage")
+        scroll_y = tk.Scrollbar(list_frame)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
 
-        tree_scroll = tk.Scrollbar(students_frame)
-        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_x = tk.Scrollbar(list_frame, orient=tk.HORIZONTAL)
+        scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.students_tree = ttk.Treeview(
-            students_frame,
+        self.alerts_tree = ttk.Treeview(
+            list_frame,
             columns=columns,
             show="tree headings",
-            yscrollcommand=tree_scroll.set,
-            style="Bold.Treeview"
+            yscrollcommand=scroll_y.set,
+            xscrollcommand=scroll_x.set
         )
-        self.students_tree.pack(fill=tk.BOTH, expand=True)
-        tree_scroll.config(command=self.students_tree.yview)
+        self.alerts_tree.pack(fill=tk.BOTH, expand=True)
+        scroll_y.config(command=self.alerts_tree.yview)
+        scroll_x.config(command=self.alerts_tree.xview)
 
         # تعريف الأعمدة
-        self.students_tree.column("#0", width=150, anchor=tk.CENTER)
-        self.students_tree.column("name", width=200, anchor=tk.CENTER)
-        self.students_tree.column("rank", width=100, anchor=tk.CENTER)
-        self.students_tree.column("without_excuse", width=120, anchor=tk.CENTER)
-        self.students_tree.column("with_excuse", width=120, anchor=tk.CENTER)
-        self.students_tree.column("total", width=100, anchor=tk.CENTER)
-        self.students_tree.column("status", width=150, anchor=tk.CENTER)
-        self.students_tree.column("percentage", width=100, anchor=tk.CENTER)
+        self.alerts_tree.column("#0", width=50, anchor=tk.CENTER)
+        self.alerts_tree.column("course", width=200, anchor=tk.CENTER)
+        self.alerts_tree.column("student_name", width=200, anchor=tk.CENTER)
+        self.alerts_tree.column("rank", width=100, anchor=tk.CENTER)
+        self.alerts_tree.column("without", width=100, anchor=tk.CENTER)
+        self.alerts_tree.column("with", width=100, anchor=tk.CENTER)
+        self.alerts_tree.column("total", width=80, anchor=tk.CENTER)
+        self.alerts_tree.column("status", width=150, anchor=tk.CENTER)
+        self.alerts_tree.column("percentage", width=100, anchor=tk.CENTER)
+        self.alerts_tree.column("course_duration", width=100, anchor=tk.CENTER)
 
-        # تعريف العناوين
-        self.students_tree.heading("#0", text="رقم الهوية")
-        self.students_tree.heading("name", text="اسم المتدرب")
-        self.students_tree.heading("rank", text="الرتبة")
-        self.students_tree.heading("without_excuse", text="غياب بدون عذر")
-        self.students_tree.heading("with_excuse", text="غياب بعذر")
-        self.students_tree.heading("total", text="المجموع")
-        self.students_tree.heading("status", text="الحالة")
-        self.students_tree.heading("percentage", text="النسبة %")
+        # العناوين
+        self.alerts_tree.heading("#0", text="م")
+        self.alerts_tree.heading("course", text="اسم الدورة")
+        self.alerts_tree.heading("student_name", text="اسم المتدرب")
+        self.alerts_tree.heading("rank", text="الرتبة")
+        self.alerts_tree.heading("without", text="بدون عذر")
+        self.alerts_tree.heading("with", text="بعذر")
+        self.alerts_tree.heading("total", text="المجموع")
+        self.alerts_tree.heading("status", text="الحالة")
+        self.alerts_tree.heading("percentage", text="النسبة %")
+        self.alerts_tree.heading("course_duration", text="فئة الدورة")
 
-        # تعريف الألوان للحالات
-        self.students_tree.tag_configure("safe", background="#e8f5e9")
-        self.students_tree.tag_configure("warning", background="#fff8e1")
-        self.students_tree.tag_configure("danger", background="#ffebee")
-        self.students_tree.tag_configure("exceeded", background="#ff5252", foreground="white")
+        # الألوان
+        self.alerts_tree.tag_configure("exceeded", background="#ff5252", foreground="white")
+        self.alerts_tree.tag_configure("warning", background="#fff8e1")
+        self.alerts_tree.tag_configure("danger", background="#ffebee")
+
+        # ربط الحدث للنقر المزدوج
+        self.alerts_tree.bind("<Double-1>", self.on_double_click)
 
         # إطار الأزرار
-        button_frame = tk.Frame(self.window, bg=self.colors["light"], pady=10)
-        button_frame.pack(fill=tk.X, padx=10)
+        btn_frame = tk.Frame(self.window, bg=self.colors["light"], pady=10)
+        btn_frame.pack(fill=tk.X, padx=10)
 
         tk.Button(
-            button_frame,
-            text="تحديث البيانات",
+            btn_frame,
+            text="📋 تصدير التقرير الشامل",
+            font=self.fonts["text_bold"],
+            bg="#FF6B6B",
+            fg="white",
+            padx=20,
+            pady=8,
+            bd=0,
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=self.export_all_alerts_report
+        ).pack(side=tk.LEFT, padx=5)
+
+        tk.Button(
+            btn_frame,
+            text="📊 تصدير تقرير مفصل للدورة",
             font=self.fonts["text_bold"],
             bg=self.colors["primary"],
             fg="white",
-            padx=15,
-            pady=5,
+            padx=20,
+            pady=8,
             bd=0,
             relief=tk.FLAT,
             cursor="hand2",
-            command=self.refresh_data
+            command=self.export_course_report
         ).pack(side=tk.LEFT, padx=5)
 
         tk.Button(
-            button_frame,
-            text="تصدير تقرير المتجاوزين",
-            font=self.fonts["text_bold"],
-            bg=self.colors["danger"],
-            fg="white",
-            padx=15,
-            pady=5,
-            bd=0,
-            relief=tk.FLAT,
-            cursor="hand2",
-            command=self.export_exceeded_report
-        ).pack(side=tk.LEFT, padx=5)
-
-        tk.Button(
-            button_frame,
-            text="عرض التفاصيل",
+            btn_frame,
+            text="👁️ عرض تفاصيل المتدرب",
             font=self.fonts["text_bold"],
             bg=self.colors["success"],
             fg="white",
-            padx=15,
-            pady=5,
+            padx=20,
+            pady=8,
             bd=0,
             relief=tk.FLAT,
             cursor="hand2",
@@ -199,83 +214,45 @@ class AbsenceMonitoringSystem:
         ).pack(side=tk.LEFT, padx=5)
 
         tk.Button(
-            button_frame,
+            btn_frame,
+            text="🔄 تحديث",
+            font=self.fonts["text_bold"],
+            bg="#4ECDC4",  # لون أزرق فاتح
+            fg="white",
+            padx=20,
+            pady=8,
+            bd=0,
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=self.load_all_alerts_data
+        ).pack(side=tk.LEFT, padx=5)
+
+        tk.Button(
+            btn_frame,
             text="إغلاق",
             font=self.fonts["text_bold"],
             bg=self.colors["dark"],
             fg="white",
-            padx=15,
-            pady=5,
+            padx=20,
+            pady=8,
             bd=0,
             relief=tk.FLAT,
             cursor="hand2",
             command=self.window.destroy
         ).pack(side=tk.RIGHT, padx=5)
 
-    def load_courses(self):
-        """تحميل قائمة الدورات"""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT DISTINCT ci.course_name 
-            FROM course_info ci
-            WHERE ci.end_date_system IS NOT NULL AND ci.end_date_system != ''
-            ORDER BY ci.course_name
-        """)
-        courses = [row[0] for row in cursor.fetchall()]
-        self.course_combo['values'] = courses
-
-    def on_course_selected(self, event=None):
-        """عند اختيار دورة"""
-        course_name = self.course_var.get()
-        if not course_name:
-            return
-
-        # الحصول على معلومات الدورة
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT start_day, start_month, start_year, 
-                   end_day, end_month, end_year, end_date_system
-            FROM course_info
-            WHERE course_name = ?
-        """, (course_name,))
-
-        course_info = cursor.fetchone()
-        if not course_info:
-            messagebox.showwarning("تنبيه", "لم يتم العثور على معلومات الدورة")
-            return
-
-        # حساب مدة الدورة
-        end_date_str = course_info[6]
-        if end_date_str:
-            end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
-            # نفترض أن تاريخ البداية هو أول يوم تم تسجيل حضور فيه
-            cursor.execute("""
-                SELECT MIN(date) FROM attendance a
-                JOIN trainees t ON a.national_id = t.national_id
-                WHERE t.course = ?
-            """, (course_name,))
-
-            start_date_result = cursor.fetchone()
-            if start_date_result and start_date_result[0]:
-                start_date = datetime.datetime.strptime(start_date_result[0], "%Y-%m-%d").date()
-                duration_days = (end_date - start_date).days + 1
-
-                # تحديد فئة الدورة وحدود الغياب
-                category, max_without, max_with = self.determine_course_category(duration_days)
-
-                # تحديث عرض المعلومات كنص بسيط
-                info_text = f"مدة الدورة: {duration_days} يوم\n"
-                info_text += f"فئة الدورة: {category}\n"
-                info_text += f"الحد الأقصى للغياب بدون عذر: {max_without} أيام\n"
-                info_text += f"الحد الأقصى للغياب بعذر: {max_with} أيام"
-
-                self.info_text_var.set(info_text)
-
-                # تحميل بيانات المتدربين
-                self.load_students_data(course_name, max_without, max_with)
+        # تلميح في الأسفل
+        hint_label = tk.Label(
+            self.window,
+            text="💡 تلميح: انقر نقرًا مزدوجًا على أي متدرب لعرض تفاصيل غيابه",
+            font=("Tajawal", 10),
+            bg=self.colors["light"],
+            fg="#666"
+        )
+        hint_label.pack(pady=5)
 
     def determine_course_category(self, duration_days):
-        """تحديد فئة الدورة وحدود الغياب المسموح - محدث حسب المعايير الجديدة"""
+        """تحديد فئة الدورة وحدود الغياب المسموح"""
         if duration_days >= 85:  # 3 أشهر أو أكثر
             return "3 أشهر أو أكثر", 4, 8
         elif duration_days >= 55:  # شهرين
@@ -362,137 +339,272 @@ class AbsenceMonitoringSystem:
 
         return without_excuse_days, with_excuse_days
 
-    def load_students_data(self, course_name, max_without, max_with):
-        """تحميل بيانات المتدربين وحساب حالة الغياب - مع ترتيب المتجاوزين أولاً"""
+    def load_all_alerts_data(self):
+        """تحميل بيانات جميع الإنذارات"""
         # مسح البيانات الحالية
-        for item in self.students_tree.get_children():
-            self.students_tree.delete(item)
+        for item in self.alerts_tree.get_children():
+            self.alerts_tree.delete(item)
 
         cursor = self.conn.cursor()
 
-        # الحصول على جميع المتدربين في الدورة
+        # الحصول على جميع الدورات النشطة
         cursor.execute("""
-            SELECT national_id, name, rank
-            FROM trainees
-            WHERE course = ? AND is_excluded = 0
-            ORDER BY name
-        """, (course_name,))
+            SELECT DISTINCT ci.course_name, ci.end_date_system
+            FROM course_info ci
+            WHERE ci.end_date_system IS NOT NULL AND ci.end_date_system != ''
+            ORDER BY ci.course_name
+        """)
 
-        students = cursor.fetchall()
+        courses = cursor.fetchall()
 
-        # قوائم لتخزين المتدربين حسب الحالة
-        exceeded_students = []
-        warning_students = []
-        danger_students = []
-        safe_students = []
+        all_alerts = []
+        total_exceeded = 0
+        total_warnings = 0
+        total_danger = 0
 
-        for student in students:
-            student_id, name, rank = student
+        for course_name, end_date_str in courses:
+            if not end_date_str:
+                continue
 
-            # حساب أيام الغياب الفعلية
-            without_excuse, with_excuse = self.calculate_actual_absence_days(student_id, course_name)
+            # حساب مدة الدورة
+            end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-            total_absence = without_excuse + with_excuse
+            # الحصول على تاريخ البداية
+            cursor.execute("""
+                SELECT MIN(date) FROM attendance a
+                JOIN trainees t ON a.national_id = t.national_id
+                WHERE t.course = ?
+            """, (course_name,))
 
-            # تحديد الحالة
-            status = "آمن"
-            tag = "safe"
-            percentage = 0
+            start_date_result = cursor.fetchone()
+            if not start_date_result or not start_date_result[0]:
+                continue
 
-            # حساب النسبة من الحد المسموح
-            without_percentage = (without_excuse / max_without * 100) if max_without > 0 else 0
-            with_percentage = (with_excuse / max_with * 100) if max_with > 0 else 0
-            max_percentage = max(without_percentage, with_percentage)
+            start_date = datetime.datetime.strptime(start_date_result[0], "%Y-%m-%d").date()
+            duration_days = (end_date - start_date).days + 1
 
-            student_data = {
-                'id': student_id,
-                'name': name,
-                'rank': rank,
-                'without_excuse': without_excuse,
-                'with_excuse': with_excuse,
-                'total': total_absence,
-                'max_without': max_without,
-                'max_with': max_with,
-                'percentage': max_percentage
-            }
+            # تحديد حدود الغياب
+            category, max_without, max_with = self.determine_course_category(duration_days)
 
-            if without_excuse > max_without or with_excuse > max_with:
-                student_data['status'] = "تجاوز الحد المسموح"
-                student_data['tag'] = "exceeded"
-                exceeded_students.append(student_data)
-            elif without_percentage >= 80 or with_percentage >= 80:
-                student_data['status'] = "تحذير - اقتراب من الحد"
-                student_data['tag'] = "warning"
-                warning_students.append(student_data)
-            elif without_percentage >= 50 or with_percentage >= 50:
-                student_data['status'] = "انتباه"
-                student_data['tag'] = "danger"
-                danger_students.append(student_data)
-            else:
-                student_data['status'] = "آمن"
-                student_data['tag'] = "safe"
-                safe_students.append(student_data)
+            # الحصول على المتدربين في الدورة
+            cursor.execute("""
+                SELECT national_id, name, rank
+                FROM trainees
+                WHERE course = ? AND is_excluded = 0
+                ORDER BY name
+            """, (course_name,))
 
-        # إدخال المتدربين بالترتيب: المتجاوزين أولاً
-        all_students = exceeded_students + warning_students + danger_students + safe_students
+            students = cursor.fetchall()
 
-        for student_data in all_students:
-            self.students_tree.insert(
+            for student_id, name, rank in students:
+                # حساب أيام الغياب
+                without_excuse, with_excuse = self.calculate_actual_absence_days(student_id, course_name)
+                total_absence = without_excuse + with_excuse
+
+                # حساب النسبة
+                without_percentage = (without_excuse / max_without * 100) if max_without > 0 else 0
+                with_percentage = (with_excuse / max_with * 100) if max_with > 0 else 0
+                max_percentage = max(without_percentage, with_percentage)
+
+                # تحديد الحالة
+                status = ""
+                tag = ""
+
+                if without_excuse > max_without or with_excuse > max_with:
+                    status = "تجاوز الحد المسموح"
+                    tag = "exceeded"
+                    total_exceeded += 1
+                elif without_percentage >= 80 or with_percentage >= 80:
+                    status = "تحذير - اقتراب من الحد"
+                    tag = "warning"
+                    total_warnings += 1
+                elif without_percentage >= 50 or with_percentage >= 50:
+                    status = "انتباه"
+                    tag = "danger"
+                    total_danger += 1
+                else:
+                    continue  # لا نعرض الآمنين
+
+                alert_data = {
+                    'course': course_name,
+                    'student_id': student_id,
+                    'student_name': name,
+                    'rank': rank,
+                    'without_excuse': without_excuse,
+                    'with_excuse': with_excuse,
+                    'total': total_absence,
+                    'max_without': max_without,
+                    'max_with': max_with,
+                    'status': status,
+                    'tag': tag,
+                    'percentage': max_percentage,
+                    'duration_days': duration_days,
+                    'category': category
+                }
+                all_alerts.append(alert_data)
+
+        # ترتيب حسب الخطورة
+        all_alerts.sort(key=lambda x: (
+            0 if x['tag'] == 'exceeded' else 1 if x['tag'] == 'warning' else 2,
+            -x['percentage']
+        ))
+
+        # حفظ البيانات
+        self.all_alerts_data = all_alerts
+
+        # إدخال البيانات في الشجرة
+        for i, alert in enumerate(all_alerts, 1):
+            self.alerts_tree.insert(
                 "",
                 tk.END,
-                text=student_data['id'],
+                text=str(i),
                 values=(
-                    student_data['name'],
-                    student_data['rank'],
-                    f"{student_data['without_excuse']} / {student_data['max_without']}",
-                    f"{student_data['with_excuse']} / {student_data['max_with']}",
-                    student_data['total'],
-                    student_data['status'],
-                    f"{student_data['percentage']:.1f}%"
+                    alert['course'],
+                    alert['student_name'],
+                    alert['rank'],
+                    f"{alert['without_excuse']}/{alert['max_without']}",
+                    f"{alert['with_excuse']}/{alert['max_with']}",
+                    alert['total'],
+                    alert['status'],
+                    f"{alert['percentage']:.1f}%",
+                    alert['category']  # عرض الفئة فقط
                 ),
-                tags=(student_data['tag'],)
+                tags=(alert['tag'],)
             )
 
-        # عرض ملخص
-        if len(exceeded_students) > 0:
+        # تحديث الملخص
+        self.summary_label.config(
+            text=f"📊 إجمالي الإنذارات: {len(all_alerts)} | "
+                 f"🚫 متجاوزين: {total_exceeded} | "
+                 f"⚠️ تحذيرات: {total_warnings} | "
+                 f"⚡ انتباه: {total_danger}"
+        )
+
+        if total_exceeded > 0:
             messagebox.showwarning(
                 "تنبيه هام",
-                f"يوجد {len(exceeded_students)} متدرب تجاوزوا الحد المسموح للغياب\n"
-                f"و {len(warning_students)} متدرب في حالة تحذير"
+                f"يوجد {total_exceeded} متدرب تجاوزوا الحد المسموح للغياب عبر جميع الدورات!"
             )
 
-    def refresh_data(self):
-        """تحديث البيانات"""
-        if self.course_var.get():
-            self.on_course_selected()
-            messagebox.showinfo("تحديث", "تم تحديث البيانات بنجاح")
+    def filter_alerts_tree(self):
+        """فلترة شجرة الإنذارات"""
+        # التحقق من وجود البيانات
+        if not hasattr(self, 'all_alerts_data') or not self.all_alerts_data:
+            return
+
+        search_text = self.search_var.get().lower()
+        filter_type = self.filter_var.get()
+
+        # مسح الشجرة
+        for item in self.alerts_tree.get_children():
+            self.alerts_tree.delete(item)
+
+        # إعادة إدخال البيانات المفلترة
+        counter = 1
+        for alert in self.all_alerts_data:
+            # تطبيق فلتر النوع
+            if filter_type == "exceeded" and alert['tag'] != "exceeded":
+                continue
+            elif filter_type == "warning" and alert['tag'] != "warning":
+                continue
+            elif filter_type == "danger" and alert['tag'] != "danger":
+                continue
+
+            # تطبيق فلتر البحث
+            if search_text:
+                if not any(search_text in str(value).lower() for value in [
+                    alert['course'],
+                    alert['student_name'],
+                    alert['rank'],
+                    alert['student_id']
+                ]):
+                    continue
+
+            # إدخال البيانات
+            self.alerts_tree.insert(
+                "",
+                tk.END,
+                text=str(counter),
+                values=(
+                    alert['course'],
+                    alert['student_name'],
+                    alert['rank'],
+                    f"{alert['without_excuse']}/{alert['max_without']}",
+                    f"{alert['with_excuse']}/{alert['max_with']}",
+                    alert['total'],
+                    alert['status'],
+                    f"{alert['percentage']:.1f}%",
+                    alert['category']  # عرض الفئة فقط
+                ),
+                tags=(alert['tag'],)
+            )
+            counter += 1
+
+    def on_double_click(self, event):
+        """عند النقر المزدوج على متدرب"""
+        self.show_student_details()
 
     def show_student_details(self):
         """عرض تفاصيل غياب المتدرب المحدد"""
-        selection = self.students_tree.selection()
+        selection = self.alerts_tree.selection()
         if not selection:
             messagebox.showwarning("تنبيه", "الرجاء اختيار متدرب من القائمة")
             return
 
-        student_id = self.students_tree.item(selection[0])['text']
-        student_name = self.students_tree.item(selection[0])['values'][0]
+        # التحقق من وجود البيانات
+        if not hasattr(self, 'all_alerts_data') or not self.all_alerts_data:
+            messagebox.showwarning("تنبيه", "لا توجد بيانات محملة")
+            return
+
+        # الحصول على بيانات المتدرب
+        item = self.alerts_tree.item(selection[0])
+        item_index = int(item['text']) - 1
+
+        # التحقق من صحة الفهرس
+        if item_index < 0 or item_index >= len(self.all_alerts_data):
+            messagebox.showwarning("تنبيه", "خطأ في تحديد البيانات")
+            return
+
+        student_data = self.all_alerts_data[item_index]
+
+        student_id = student_data['student_id']
+        student_name = student_data['student_name']
+        course_name = student_data['course']
 
         # إنشاء نافذة التفاصيل
         detail_window = tk.Toplevel(self.window)
         detail_window.title(f"تفاصيل غياب: {student_name}")
-        detail_window.geometry("800x500")
+        detail_window.geometry("900x600")
         detail_window.configure(bg=self.colors["light"])
 
         # العنوان
+        title_frame = tk.Frame(detail_window, bg=self.colors["primary"], height=50)
+        title_frame.pack(fill=tk.X)
+        title_frame.pack_propagate(False)
+
         tk.Label(
-            detail_window,
-            text=f"سجل غياب المتدرب: {student_name}",
+            title_frame,
+            text=f"سجل غياب المتدرب: {student_name} - الدورة: {course_name}",
             font=self.fonts["title"],
             bg=self.colors["primary"],
-            fg="white",
-            padx=10,
-            pady=10
-        ).pack(fill=tk.X)
+            fg="white"
+        ).pack(expand=True)
+
+        # معلومات ملخصة
+        info_frame = tk.Frame(detail_window, bg="#f5f5f5", pady=10)
+        info_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        info_text = f"إجمالي الغياب بدون عذر: {student_data['without_excuse']} من {student_data['max_without']} يوم\n"
+        info_text += f"إجمالي الغياب بعذر: {student_data['with_excuse']} من {student_data['max_with']} يوم\n"
+        info_text += f"الحالة: {student_data['status']}"
+
+        tk.Label(
+            info_frame,
+            text=info_text,
+            font=self.fonts["text"],
+            bg="#f5f5f5",
+            justify=tk.RIGHT
+        ).pack()
 
         # إطار التفاصيل
         detail_frame = tk.Frame(detail_window, bg=self.colors["light"], padx=10, pady=10)
@@ -500,19 +612,25 @@ class AbsenceMonitoringSystem:
 
         # شجرة التفاصيل
         columns = ("date", "day", "status", "reason", "notes")
+
+        tree_scroll = tk.Scrollbar(detail_frame)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
         detail_tree = ttk.Treeview(
             detail_frame,
             columns=columns,
             show="headings",
-            height=15
+            height=15,
+            yscrollcommand=tree_scroll.set
         )
         detail_tree.pack(fill=tk.BOTH, expand=True)
+        tree_scroll.config(command=detail_tree.yview)
 
         # تعريف الأعمدة
         detail_tree.column("date", width=100, anchor=tk.CENTER)
         detail_tree.column("day", width=100, anchor=tk.CENTER)
         detail_tree.column("status", width=100, anchor=tk.CENTER)
-        detail_tree.column("reason", width=200, anchor=tk.CENTER)
+        detail_tree.column("reason", width=250, anchor=tk.CENTER)
         detail_tree.column("notes", width=200, anchor=tk.CENTER)
 
         # تعريف العناوين
@@ -569,8 +687,8 @@ class AbsenceMonitoringSystem:
             font=self.fonts["text_bold"],
             bg=self.colors["dark"],
             fg="white",
-            padx=15,
-            pady=5,
+            padx=20,
+            pady=8,
             bd=0,
             relief=tk.FLAT,
             cursor="hand2",
@@ -590,76 +708,232 @@ class AbsenceMonitoringSystem:
         }
         return days.get(date_obj.weekday(), "")
 
-    def export_exceeded_report(self):
-        """تصدير تقرير بالمتدربين المتجاوزين للحد المسموح"""
+    def export_course_report(self):
+        """تصدير تقرير مفصل للدورة المحددة"""
+        selection = self.alerts_tree.selection()
+        if not selection:
+            messagebox.showwarning("تنبيه", "الرجاء اختيار متدرب من دورة معينة")
+            return
+
+        # التحقق من وجود البيانات
+        if not hasattr(self, 'all_alerts_data') or not self.all_alerts_data:
+            messagebox.showwarning("تنبيه", "لا توجد بيانات محملة")
+            return
+
+        # الحصول على اسم الدورة
+        item = self.alerts_tree.item(selection[0])
+        course_name = item['values'][0]
+
+        # جمع بيانات الدورة المحددة
+        course_alerts = [a for a in self.all_alerts_data if a['course'] == course_name]
+
+        if not course_alerts:
+            messagebox.showinfo("معلومات", "لا توجد بيانات للتصدير")
+            return
+
         import pandas as pd
         from tkinter import filedialog
 
-        # جمع البيانات
-        exceeded_students = []
+        # تحضير البيانات
+        export_data = []
+        for alert in course_alerts:
+            export_data.append({
+                'رقم الهوية': alert['student_id'],
+                'اسم المتدرب': alert['student_name'],
+                'الرتبة': alert['rank'],
+                'الغياب بدون عذر': f"{alert['without_excuse']}/{alert['max_without']}",
+                'الغياب بعذر': f"{alert['with_excuse']}/{alert['max_with']}",
+                'المجموع': alert['total'],
+                'الحالة': alert['status'],
+                'النسبة': f"{alert['percentage']:.1f}%"
+            })
 
-        for child in self.students_tree.get_children():
-            item = self.students_tree.item(child)
-            if "exceeded" in item['tags']:
-                values = item['values']
-                exceeded_students.append({
-                    'رقم الهوية': item['text'],
-                    'الاسم': values[0],
-                    'الرتبة': values[1],
-                    'الغياب بدون عذر': values[2],
-                    'الغياب بعذر': values[3],
-                    'المجموع': values[4],
-                    'الحالة': values[5],
-                    'النسبة': values[6]
-                })
-
-        if not exceeded_students:
-            messagebox.showinfo("معلومات", "لا يوجد متدربين متجاوزين للحد المسموح")
-            return
-
-        # تصدير إلى Excel
+        # اختيار مكان الحفظ
         export_file = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx")],
-            initialfile=f"المتجاوزين_للحد_المسموح_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
+            initialfile=f"تقرير_إنذارات_{course_name}_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
         )
 
         if export_file:
-            df = pd.DataFrame(exceeded_students)
-
-            # إضافة معلومات الدورة
-            course_name = self.course_var.get()
-            duration_text = self.info_text_var.get()
-
             with pd.ExcelWriter(export_file, engine='xlsxwriter') as writer:
                 # معلومات الدورة
-                info_data = []
-                for line in duration_text.split('\n'):
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        info_data.append({'المعلومات': key.strip(), 'القيمة': value.strip()})
-
-                info_df = pd.DataFrame(info_data)
+                course_info = {
+                    'المعلومات': ['اسم الدورة', 'فئة الدورة', 'عدد المتدربين المنذرين'],
+                    'القيمة': [
+                        course_name,
+                        course_alerts[0]['category'],
+                        len(course_alerts)
+                    ]
+                }
+                info_df = pd.DataFrame(course_info)
                 info_df.to_excel(writer, sheet_name='معلومات_الدورة', index=False)
 
-                # قائمة المتجاوزين
-                df.to_excel(writer, sheet_name='المتجاوزين', index=False)
+                # تفاصيل المتدربين
+                df = pd.DataFrame(export_data)
+                df.to_excel(writer, sheet_name='تفاصيل_الإنذارات', index=False)
 
                 # تنسيق
                 workbook = writer.book
-                worksheet = writer.sheets['المتجاوزين']
 
-                # تنسيق الرأس
-                header_format = workbook.add_format({
-                    'bold': True,
-                    'bg_color': '#FF5252',
-                    'font_color': 'white',
-                    'border': 1,
-                    'align': 'center',
-                    'valign': 'vcenter'
-                })
+                # تنسيق الأوراق
+                for sheet_name in ['معلومات_الدورة', 'تفاصيل_الإنذارات']:
+                    worksheet = writer.sheets[sheet_name]
+                    header_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#FF6B6B',
+                        'font_color': 'white',
+                        'border': 1,
+                        'align': 'center',
+                        'valign': 'vcenter'
+                    })
 
-                for col_num, value in enumerate(df.columns.values):
-                    worksheet.write(0, col_num, value, header_format)
+                    # تطبيق التنسيق على الرأس
+                    for col_num, value in enumerate(
+                            df.columns.values if sheet_name == 'تفاصيل_الإنذارات' else info_df.columns.values):
+                        worksheet.write(0, col_num, value, header_format)
+                        worksheet.set_column(col_num, col_num, 20)
 
-            messagebox.showinfo("نجاح", f"تم تصدير التقرير إلى:\n{export_file}")
+            messagebox.showinfo("نجاح", f"تم تصدير تقرير الدورة إلى:\n{export_file}")
+
+    def export_all_alerts_report(self):
+        """تصدير تقرير شامل بجميع الإنذارات"""
+        if not hasattr(self, 'all_alerts_data') or not self.all_alerts_data:
+            messagebox.showinfo("معلومات", "لا توجد إنذارات لتصديرها")
+            return
+
+        import pandas as pd
+        from tkinter import filedialog
+
+        # تحضير البيانات للتصدير
+        export_data = []
+        for alert in self.all_alerts_data:
+            export_data.append({
+                'اسم الدورة': alert['course'],
+                'مدة الدورة': alert['category'],
+                'رقم الهوية': alert['student_id'],
+                'اسم المتدرب': alert['student_name'],
+                'الرتبة': alert['rank'],
+                'الغياب بدون عذر': f"{alert['without_excuse']}/{alert['max_without']}",
+                'الغياب بعذر': f"{alert['with_excuse']}/{alert['max_with']}",
+                'المجموع': alert['total'],
+                'الحالة': alert['status'],
+                'النسبة': f"{alert['percentage']:.1f}%"
+            })
+
+        # جمع تفاصيل الغياب لكل متدرب
+        absence_details = []
+        cursor = self.conn.cursor()
+
+        for alert in self.all_alerts_data:
+            # الحصول على تواريخ الغياب بدون عذر
+            cursor.execute("""
+                SELECT date FROM attendance
+                WHERE national_id = ? AND status = 'غائب'
+                ORDER BY date
+            """, (alert['student_id'],))
+
+            without_excuse_dates = [row[0] for row in cursor.fetchall()]
+
+            # الحصول على تواريخ الغياب بعذر مع الأسباب
+            cursor.execute("""
+                SELECT date, excuse_reason FROM attendance
+                WHERE national_id = ? AND status = 'غائب بعذر'
+                ORDER BY date
+            """, (alert['student_id'],))
+
+            with_excuse_records = cursor.fetchall()
+
+            # تحضير البيانات للتفاصيل
+            absence_details.append({
+                'رقم الهوية': alert['student_id'],
+                'اسم المتدرب': alert['student_name'],
+                'الرتبة': alert['rank'],
+                'اسم الدورة': alert['course'],
+                'تواريخ الغياب بدون عذر': '، '.join(without_excuse_dates) if without_excuse_dates else 'لا يوجد',
+                'تواريخ الغياب بعذر': '، '.join(
+                    [rec[0] for rec in with_excuse_records]) if with_excuse_records else 'لا يوجد',
+                'أسباب الغياب بعذر': ' | '.join([f"{rec[0]}: {rec[1] or 'غير محدد'}" for rec in
+                                                 with_excuse_records]) if with_excuse_records else 'لا يوجد'
+            })
+
+        # اختيار مكان الحفظ
+        export_file = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx")],
+            initialfile=f"تقرير_الإنذارات_الشامل_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        )
+
+        if export_file:
+            with pd.ExcelWriter(export_file, engine='xlsxwriter') as writer:
+                # ورقة الملخص
+                summary_data = {
+                    'الإحصائية': [
+                        'إجمالي الإنذارات',
+                        'متجاوزي الحد المسموح',
+                        'تحذيرات',
+                        'انتباه',
+                        'عدد الدورات المتأثرة'
+                    ],
+                    'العدد': [
+                        len(self.all_alerts_data),
+                        sum(1 for a in self.all_alerts_data if a['tag'] == 'exceeded'),
+                        sum(1 for a in self.all_alerts_data if a['tag'] == 'warning'),
+                        sum(1 for a in self.all_alerts_data if a['tag'] == 'danger'),
+                        len(set(a['course'] for a in self.all_alerts_data))
+                    ]
+                }
+                summary_df = pd.DataFrame(summary_data)
+                summary_df.to_excel(writer, sheet_name='ملخص', index=False)
+
+                # ورقة الإحصائيات العامة
+                df = pd.DataFrame(export_data)
+                df.to_excel(writer, sheet_name='إحصائيات_عامة', index=False)
+
+                # ورقة تفاصيل الغياب
+                details_df = pd.DataFrame(absence_details)
+                details_df.to_excel(writer, sheet_name='تفاصيل_الغياب', index=False)
+
+                # ورقة المتجاوزين فقط
+                exceeded_data = [d for d in export_data if 'تجاوز' in d['الحالة']]
+                if exceeded_data:
+                    exceeded_df = pd.DataFrame(exceeded_data)
+                    exceeded_df.to_excel(writer, sheet_name='المتجاوزين', index=False)
+
+                # تنسيق
+                workbook = writer.book
+
+                # تنسيق جميع الأوراق
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+
+                    # تنسيق الرأس
+                    header_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#FF6B6B',
+                        'font_color': 'white',
+                        'border': 1,
+                        'align': 'center',
+                        'valign': 'vcenter'
+                    })
+
+                    # تنسيق خاص للمتجاوزين
+                    if sheet_name == 'المتجاوزين':
+                        header_format = workbook.add_format({
+                            'bold': True,
+                            'bg_color': '#FF0000',
+                            'font_color': 'white',
+                            'border': 1,
+                            'align': 'center',
+                            'valign': 'vcenter'
+                        })
+
+                    # تطبيق التنسيق
+                    for col_num in range(worksheet.dim_colmax + 1):
+                        worksheet.set_column(col_num, col_num, 20)
+
+                    # توسيع عمود التواريخ وأسباب الغياب في ورقة التفاصيل
+                    if sheet_name == 'تفاصيل_الغياب':
+                        worksheet.set_column(4, 6, 40)  # أعمدة التواريخ والأسباب
+
+            messagebox.showinfo("نجاح", f"تم تصدير التقرير الشامل إلى:\n{export_file}")
